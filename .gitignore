@@ -7,10 +7,24 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
+node_modules/
+dist/
 dist-ssr
 *.local
+
+# Environment files and local secrets
+.env
+.env.*
+!.env.example
+**/secrets.json
+**/secrets.*.json
+**/appsettings.*.local.json
+**/appsettings.*.Secrets.json
+**/appsettings.*.secrets.json
+**/*.pfx
+**/*.p12
+**/*.key
+**/*.pem
 
 # Editor directories and files
 .vscode/*
@@ -24,6 +38,14 @@ dist-ssr
 *.sw?
 
 # .NET / Visual Studio
-.vs/
+**/.vs/
 **/bin/
 **/obj/
+
+# SQLite transient files. Keep the main carshow.db trackable for submission.
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal

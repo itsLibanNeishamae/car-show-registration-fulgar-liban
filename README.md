@@ -1,5 +1,29 @@
 # React + Vite
 
+## Backend database (SQLite)
+
+The API stores its SQLite database at `backend/Api/Data/carshow.db`. The API creates the `Data` directory if needed and applies pending EF Core migrations on startup. Existing database contents are preserved between restarts; the database file is excluded from source control.
+
+Install the EF Core CLI once if it is not already installed:
+
+```sh
+dotnet tool install --global dotnet-ef --version 10.0.15
+```
+
+From the `backend` directory, the initial migration command is:
+
+```sh
+dotnet ef migrations add InitialCreate --project Infrastructure --startup-project Api --output-dir Persistence/Migrations
+```
+
+The repository already includes `InitialCreate`, so do not run that command again unless you first remove/replace the existing migration. To apply the included migration to the local database:
+
+```sh
+dotnet ef database update --project Infrastructure --startup-project Api
+```
+
+For later schema changes, create a new migration with a new name, then run the database update command again.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

@@ -1,0 +1,511 @@
+@baseUrl = http://localhost:5000
+
+### Test fixture: capture the current summary total before creating a test registration.
+GET {{baseUrl}}/api/registrations/summary
+
+> {% 
+client.test("baseline summary is available", function () {
+    client.assert(response.status === 200);
+});
+client.global.set("summaryBeforeCreate", response.body.totalRegistrations);
+client.global.set("testRunId", Date.now().toString().slice(-7));
+%}
+
+### POST test: create a Competitor registration and verify fee, payment state, server-generated number, and UTC date.
+POST {{baseUrl}}/api/registrations
+Content-Type: application/json
+
+{
+  "participantName": "HTTP Competitor {{testRunId}}",
+  "contactNumber": "09171234567",
+  "email": "competitor-{{testRunId}}@example.com",
+  "address": "12 Ayala Avenue, Makati City",
+  "carMakeModel": "Toyota Supra MK4",
+  "plateNumber": "TST-{{testRunId}}-A",
+  "registrationType": "Competitor",
+  "amountPaid": 1000.00
+}
+
+> {% 
+client.test("Competitor registration is created with server values", function () {
+    client.assert(response.status === 201);
+    client.assert(response.body.registrationNumber.match(/^CS27-\d{4,}$/));
+    client.assert(response.body.registrationFee === 2500);
+    client.assert(response.body.status === "Pending");
+    client.assert(response.body.paymentStatus === "Partial");
+    client.assert(response.body.registrationDate.endsWith("Z"));
+});
+client.global.set("competitorId", response.body.id);
+client.global.set("competitorPlate", response.body.plateNumber);
+client.global.set("competitorRegistrationNumber", response.body.registrationNumber);
+%}
+
+### POST test: create an Exhibitor registration with no payment and verify the Unpaid state.
+POST {{baseUrl}}/api/registrations
+Content-Type: application/json
+
+{
+  "participantName": "HTTP Exhibitor {{testRunId}}",
+  "contactNumber": "09171234568",
+  "email": "exhibitor-{{testRunId}}@example.com",
+  "address": "88 Session Road, Baguio City",
+  "carMakeModel": "Honda Civic Type R",
+  "plateNumber": "TST-{{testRunId}}-B",
+  "registrationType": "Exhibitor",
+  "amountPaid": 0
+}
+
+> {% 
+client.test("Exhibitor registration has the correct fee and unpaid status", function () {
+    client.assert(response.status === 201);
+    client.assert(response.body.registrationFee === 1500);
+    client.assert(response.body.paymentStatus === "Unpaid");
+});
+%}
+
+### POST test: create a VIP registration with full payment and verify the Paid state.
+POST {{baseUrl}}/api/registrations
+Content-Type: application/json
+
+{
+  "participantName": "HTTP VIP {{testRunId}}",
+  "contactNumber": "09171234569",
+  "email": "vip-{{testRunId}}@example.com",
+  "address": "5 Fuente Osmena Circle, Cebu City",
+  "carMakeModel": "Nissan Skyline GT-R R34",
+  "plateNumber": "TST-{{testRunId}}-C",
+  "registrationType": "VIP",
+  "amountPaid": 5000.00
+}
+
+> {% 
+client.test("VIP registration has the correct fee and paid status", function () {
+    client.assert(response.status === 201);
+    client.assert(response.body.registrationFee === 5000);
+    client.assert(response.body.paymentStatus === "Paid");
+});
+%}
+
+### POST test: ignore client-supplied registration number, date, fee, status, and payment status.
+POST {{baseUrl}}/api/registrations
+Content-Type: application/json
+
+{
+  "participantName": "Managed Fields Test {{testRunId}}",
+  "contactNumber": "09171234570",
+  "email": "managed-{{testRunId}}@example.com",
+  "address": "45 Rizal Street, Naga City",
+  "carMakeModel": "Mazda RX-7 FD",
+  "plateNumber": "TST-{{testRunId}}-D",
+  "registrationType": "Exhibitor",
+  "amountPaid": 0,
+  "registrationNumber": "CLIENT-CONTROLLED",
+  "registrationDate": "2000-01-01T00:00:00Z",
+  "registrationFee": 0,
+  "status": "Cancelled",
+  "paymentStatus": "Paid"
+}
+
+> {% 
+client.test("server-managed fields are ignored", function () {
+    client.assert(response.status === 201);
+    client.assert(response.body.registrationNumber !== "CLIENT-CONTROLLED");
+    client.assert(response.body.registrationNumber.match(/^CS27-\d{4,}$/));
+    client.assert(response.body.registrationFee === 1500);
+    client.assert(response.body.status === "Pending");
+    client.assert(response.body.paymentStatus === "Unpaid");
+});
+client.global.set("managedFieldsId", response.body.id);
+%}
+
+### POST test: reject empty required fields with a validation ProblemDetails response.
+POST {{baseUrl}}/api/registrations
+Content-Type: application/json
+
+{
+  "participantName": "",
+  "contactNumber": "",
+  "email": "",
+  "address": "",
+  "carMakeModel": "",
+  "plateNumber": "",
+  "registrationType": "Competitor",
+  "amountPaid": 0
+}
+
+> {% 
+client.test("empty required fields return validation errors", function () {
+    client.assert(response.status === 400);
+    client.assert(response.body.status === 400);
+    client.assert(response.body.errors.ParticipantName.length > 0);
+});
+%}
+
+### POST test: reject a contact number that does not match 09 followed by nine digits.
+POST {{baseUrl}}/api/registrations
+Content-Type: application/json
+
+{
+  "participantName": "Invalid Phone {{testRunId}}",
+  "contactNumber": "+639171234567",
+  "email": "phone-{{testRunId}}@example.com",
+  "address": "1 Mabini Street, Manila",
+  "carMakeModel": "Toyota Vios",
+  "plateNumber": "TST-{{testRunId}}-E",
+  "registrationType": "Exhibitor",
+  "amountPaid": 0
+}
+
+> {% client.test("invalid contact number returns 400", function () { client.assert(response.status === 400); }); %}
+
+### POST test: reject an invalid email address.
+POST {{baseUrl}}/api/registrations
+Content-Type: application/json
+
+{
+  "participantName": "Invalid Email {{testRunId}}",
+  "contactNumber": "09171234571",
+  "email": "not-an-email",
+  "address": "1 Mabini Street, Manila",
+  "carMakeModel": "Toyota Vios",
+  "plateNumber": "TST-{{testRunId}}-F",
+  "registrationType": "Exhibitor",
+  "amountPaid": 0
+}
+
+> {% client.test("invalid email returns 400", function () { client.assert(response.status === 400); }); %}
+
+### POST test: reject an amount paid above the Competitor fee.
+POST {{baseUrl}}/api/registrations
+Content-Type: application/json
+
+{
+  "participantName": "Overpayment {{testRunId}}",
+  "contactNumber": "09171234572",
+  "email": "overpay-{{testRunId}}@example.com",
+  "address": "2 Mabini Street, Manila",
+  "carMakeModel": "Honda Civic",
+  "plateNumber": "TST-{{testRunId}}-G",
+  "registrationType": "Competitor",
+  "amountPaid": 2500.01
+}
+
+> {% client.test("overpayment returns 400", function () { client.assert(response.status === 400); }); %}
+
+### POST test: reject a negative amount paid.
+POST {{baseUrl}}/api/registrations
+Content-Type: application/json
+
+{
+  "participantName": "Negative Payment {{testRunId}}",
+  "contactNumber": "09171234573",
+  "email": "negative-{{testRunId}}@example.com",
+  "address": "3 Mabini Street, Manila",
+  "carMakeModel": "Honda Civic",
+  "plateNumber": "TST-{{testRunId}}-H",
+  "registrationType": "Competitor",
+  "amountPaid": -1
+}
+
+> {% client.test("negative amount paid returns 400", function () { client.assert(response.status === 400); }); %}
+
+### POST test: reject an unknown registration type.
+POST {{baseUrl}}/api/registrations
+Content-Type: application/json
+
+{
+  "participantName": "Unknown Type {{testRunId}}",
+  "contactNumber": "09171234574",
+  "email": "unknown-{{testRunId}}@example.com",
+  "address": "4 Mabini Street, Manila",
+  "carMakeModel": "Honda Civic",
+  "plateNumber": "TST-{{testRunId}}-I",
+  "registrationType": "Collector",
+  "amountPaid": 0
+}
+
+> {% client.test("unknown enum string returns 400", function () { client.assert(response.status === 400); }); %}
+
+### POST test: reject a participant name longer than 150 characters.
+POST {{baseUrl}}/api/registrations
+Content-Type: application/json
+
+{
+  "participantName": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "contactNumber": "09171234575",
+  "email": "long-name-{{testRunId}}@example.com",
+  "address": "5 Mabini Street, Manila",
+  "carMakeModel": "Honda Civic",
+  "plateNumber": "TST-{{testRunId}}-J",
+  "registrationType": "Exhibitor",
+  "amountPaid": 0
+}
+
+> {% client.test("text over the maximum length returns 400", function () { client.assert(response.status === 400); }); %}
+
+### POST test: reject a duplicate plate number using the successful Competitor registration.
+POST {{baseUrl}}/api/registrations
+Content-Type: application/json
+
+{
+  "participantName": "Duplicate Plate {{testRunId}}",
+  "contactNumber": "09171234576",
+  "email": "duplicate-{{testRunId}}@example.com",
+  "address": "6 Mabini Street, Manila",
+  "carMakeModel": "Toyota Supra MK4",
+  "plateNumber": "{{competitorPlate}}",
+  "registrationType": "Competitor",
+  "amountPaid": 0
+}
+
+> {% 
+client.test("duplicate plate returns a Registration.Conflict ProblemDetails response", function () {
+    client.assert(response.status === 409);
+    client.assert(response.body.title === "Registration.Conflict");
+    client.assert(response.body.detail.includes(client.global.get("competitorPlate")));
+});
+%}
+
+### GET test: default pagination uses page 1 and page size 10.
+GET {{baseUrl}}/api/registrations
+
+> {% 
+client.test("default pagination metadata is correct", function () {
+    client.assert(response.status === 200);
+    client.assert(response.body.page === 1);
+    client.assert(response.body.pageSize === 10);
+    client.assert(response.body.items.length <= 10);
+});
+client.global.set("listTotalCount", response.body.totalCount);
+%}
+
+### GET test: newest registrations are ordered first.
+GET {{baseUrl}}/api/registrations?pageSize=50
+
+> {% 
+client.test("registration dates are sorted newest first", function () {
+    client.assert(response.status === 200);
+    const dates = response.body.items.map(item => Date.parse(item.registrationDate));
+    client.assert(dates.every((date, index) => index === 0 || dates[index - 1] >= date));
+});
+%}
+
+### GET test: second page returns the requested page and custom page size.
+GET {{baseUrl}}/api/registrations?page=2&pageSize=5
+
+> {% 
+client.test("custom second page metadata is correct", function () {
+    client.assert(response.status === 200);
+    client.assert(response.body.page === 2);
+    client.assert(response.body.pageSize === 5);
+    client.assert(response.body.items.length <= 5);
+});
+%}
+
+### GET test: page past the end succeeds with an empty items array.
+GET {{baseUrl}}/api/registrations?page=9999&pageSize=10
+
+> {% 
+client.test("page past the end is empty", function () {
+    client.assert(response.status === 200);
+    client.assert(response.body.items.length === 0);
+});
+%}
+
+### GET test: page below 1 fails validation.
+GET {{baseUrl}}/api/registrations?page=0
+
+> {% client.test("invalid page returns 400", function () { client.assert(response.status === 400); }); %}
+
+### GET test: page size above 50 fails validation.
+GET {{baseUrl}}/api/registrations?pageSize=51
+
+> {% client.test("invalid page size returns 400", function () { client.assert(response.status === 400); }); %}
+
+### GET test: filter by registration type.
+GET {{baseUrl}}/api/registrations?type=VIP
+
+> {% 
+client.test("type filter returns only VIP registrations", function () {
+    client.assert(response.status === 200);
+    client.assert(response.body.items.every(item => item.registrationType === "VIP"));
+});
+%}
+
+### GET test: filter by status.
+GET {{baseUrl}}/api/registrations?status=CheckedIn
+
+> {% 
+client.test("status filter returns only checked-in registrations", function () {
+    client.assert(response.status === 200);
+    client.assert(response.body.items.every(item => item.status === "CheckedIn"));
+});
+%}
+
+### GET test: search for a complete participant name.
+GET {{baseUrl}}/api/registrations?participantName=Juan%20Dela%20Cruz
+
+> {% 
+client.test("participant name search finds the seeded participant", function () {
+    client.assert(response.status === 200);
+    client.assert(response.body.items.some(item => item.participantName === "Juan Dela Cruz"));
+});
+%}
+
+### GET test: participant name search ignores uppercase and lowercase differences.
+GET {{baseUrl}}/api/registrations?participantName=jUaN%20dElA%20cRuZ
+
+> {% 
+client.test("participant search is case insensitive", function () {
+    client.assert(response.status === 200);
+    client.assert(response.body.items.some(item => item.participantName === "Juan Dela Cruz"));
+});
+%}
+
+### GET test: participant name search supports partial names.
+GET {{baseUrl}}/api/registrations?participantName=Del%20Cr
+
+> {% 
+client.test("partial participant name search works", function () {
+    client.assert(response.status === 200);
+    client.assert(response.body.items.some(item => item.participantName === "Juan Dela Cruz"));
+});
+%}
+
+### GET test: combine participant name, type, and status filters.
+GET {{baseUrl}}/api/registrations?participantName=Miguel&type=VIP&status=CheckedIn
+
+> {% 
+client.test("combined filters are applied together", function () {
+    client.assert(response.status === 200);
+    client.assert(response.body.items.every(item =>
+        item.participantName.includes("Miguel") &&
+        item.registrationType === "VIP" &&
+        item.status === "CheckedIn"));
+});
+%}
+
+### GET test: a nonmatching name returns no results.
+GET {{baseUrl}}/api/registrations?participantName=NoSuchParticipant-{{testRunId}}
+
+> {% 
+client.test("nonmatching filter returns an empty list", function () {
+    client.assert(response.status === 200);
+    client.assert(response.body.items.length === 0);
+    client.assert(response.body.totalCount === 0);
+});
+%}
+
+### GET test: invalid registration type returns a validation ProblemDetails response.
+GET {{baseUrl}}/api/registrations?type=Collector
+
+> {% client.test("invalid type returns 400", function () { client.assert(response.status === 400); }); %}
+
+### GET test: invalid status returns a validation ProblemDetails response.
+GET {{baseUrl}}/api/registrations?status=Archived
+
+> {% client.test("invalid status returns 400", function () { client.assert(response.status === 400); }); %}
+
+### GET test: fetch the Competitor registration created above by GUID.
+GET {{baseUrl}}/api/registrations/{{competitorId}}
+
+> {% 
+client.test("existing GUID returns complete registration details", function () {
+    client.assert(response.status === 200);
+    client.assert(response.body.id === client.global.get("competitorId"));
+    client.assert(response.body.registrationNumber === client.global.get("competitorRegistrationNumber"));
+    client.assert(response.body.paymentStatus === "Partial");
+});
+%}
+
+### GET test: valid but nonexistent GUID returns the Registration.NotFound ProblemDetails response.
+GET {{baseUrl}}/api/registrations/00000000-0000-0000-0000-000000000099
+
+> {% 
+client.test("nonexistent GUID returns 404 ProblemDetails", function () {
+    client.assert(response.status === 404);
+    client.assert(response.body.title === "Registration.NotFound");
+});
+%}
+
+### GET test: malformed GUID does not match the constrained route and returns 404.
+GET {{baseUrl}}/api/registrations/not-a-guid
+
+> {% client.test("invalid GUID route returns 404", function () { client.assert(response.status === 404); }); %}
+
+### SUMMARY test: all KPI fields are present and status counts add up to total registrations.
+GET {{baseUrl}}/api/registrations/summary
+
+> {% 
+client.test("summary contains all KPI fields and consistent status counts", function () {
+    client.assert(response.status === 200);
+    ["totalRegistrations", "confirmed", "checkedIn", "pending", "cancelled", "totalFees", "totalPayments", "uncollectedPayments"]
+        .forEach(field => client.assert(Object.prototype.hasOwnProperty.call(response.body, field)));
+    client.assert(response.body.confirmed + response.body.checkedIn + response.body.pending + response.body.cancelled === response.body.totalRegistrations);
+    client.assert(response.body.totalRegistrations === Number(client.global.get("listTotalCount")));
+});
+client.global.set("summaryAfterCreate", response.body.totalRegistrations);
+%}
+
+### SUMMARY test: uncollected payments equal fees minus payments.
+GET {{baseUrl}}/api/registrations/summary
+
+> {% 
+client.test("summary financial formula is correct", function () {
+    client.assert(response.status === 200);
+    client.assert(Math.abs(response.body.uncollectedPayments - (response.body.totalFees - response.body.totalPayments)) < 0.001);
+});
+%}
+
+### SUMMARY test: financial totals exclude Cancelled registrations.
+GET {{baseUrl}}/api/registrations?pageSize=50
+
+> {% 
+client.test("summary fees and payments exclude cancelled entries", function () {
+    client.assert(response.status === 200);
+    const active = response.body.items.filter(item => item.status !== "Cancelled");
+    const fees = active.reduce((total, item) => total + item.registrationFee, 0);
+    const payments = active.reduce((total, item) => total + item.amountPaid, 0);
+    client.assert(response.body.totalCount <= 50);
+    client.global.set("activeFeesFromList", fees);
+    client.global.set("activePaymentsFromList", payments);
+});
+%}
+
+### SUMMARY test: summary count increases by one after a successful creation.
+GET {{baseUrl}}/api/registrations/summary
+
+> {% 
+client.test("summary reflects the successful registration created in this run", function () {
+    client.assert(response.status === 200);
+    client.assert(response.body.totalRegistrations === Number(client.global.get("summaryBeforeCreate")) + 4);
+});
+%}
+
+### DATABASE persistence test: restart the API, then request this saved registration; it should still exist.
+GET {{baseUrl}}/api/registrations/{{competitorId}}
+
+> {% 
+client.test("registration persists after API restart", function () {
+    client.assert(response.status === 200);
+    client.assert(response.body.id === client.global.get("competitorId"));
+});
+%}
+
+### DATABASE uniqueness test: all listed registration numbers follow CS27-XXXX and are unique.
+GET {{baseUrl}}/api/registrations?pageSize=50
+
+> {% 
+client.test("registration numbers are formatted and unique", function () {
+    const numbers = response.body.items.map(item => item.registrationNumber);
+    client.assert(response.status === 200);
+    client.assert(numbers.every(number => /^CS27-\d{4,}$/.test(number)));
+    client.assert(new Set(numbers).size === numbers.length);
+});
+%}
+
+### DATABASE index check: run the SQLite command below and confirm unique indexes exist on PlateNumber and RegistrationNumber.
+# From the repository root:
+# sqlite3 backend/Api/Data/carshow.db "PRAGMA index_list('Registrations');"
+# Then inspect each unique index with: sqlite3 backend/Api/Data/carshow.db "PRAGMA index_info('IX_Registrations_PlateNumber');"
+# and: sqlite3 backend/Api/Data/carshow.db "PRAGMA index_info('IX_Registrations_RegistrationNumber');"
