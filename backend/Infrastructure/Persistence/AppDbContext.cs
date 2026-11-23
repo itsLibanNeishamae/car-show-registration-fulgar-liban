@@ -16,6 +16,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             entity.ToTable("RegistrationSequences");
             entity.HasKey(sequence => sequence.Id);
+            entity.Property(sequence => sequence.Id).ValueGeneratedNever();
             entity.Property(sequence => sequence.LastNumber).IsRequired();
             entity.HasData(new RegistrationSequence { Id = 1, LastNumber = 0 });
         });

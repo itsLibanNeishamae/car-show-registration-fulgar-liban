@@ -7,10 +7,27 @@ using Api.Endpoints.Registrations;
 using Infrastructure.Persistence.Seed;
 
 var builder = WebApplication.CreateBuilder(args);
-var databaseDirectory = Path.Combine(builder.Environment.ContentRootPath, "Data");
-Directory.CreateDirectory(databaseDirectory);
-var databasePath = Path.Combine(databaseDirectory, "carshow.db");
-var connectionString = $"Data Source={databasePath}";
+
+var rawConnectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=carshow.db";
+var connectionStringBuilder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(rawConnectionString);
+if (!Path.IsPathRooted(connectionStringBuilder.DataSource))
+{
+    var parentPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", connectionStringBuilder.DataSource));
+    var localPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, connectionStringBuilder.DataSource));
+    if (File.Exists(parentPath))
+    {
+        connectionStringBuilder.DataSource = parentPath;
+    }
+    else if (File.Exists(localPath))
+    {
+        connectionStringBuilder.DataSource = localPath;
+    }
+    else
+    {
+        connectionStringBuilder.DataSource = parentPath;
+    }
+}
+var connectionString = connectionStringBuilder.ConnectionString;
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(connectionString);
